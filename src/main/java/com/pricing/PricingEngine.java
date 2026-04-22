@@ -2,65 +2,63 @@ package com.pricing;
 
 import java.util.List;
 
-// BAD DESIGN - everything in one class, poor naming, no separation of concerns
+/**
+ * Refactored PricingEngine.
+ * Delegates discount and tax logic to dedicated classes.
+ * Keeps the old public API (calc, getSubtotal, getDiscount, getTax)
+ * so existing tests still pass.
+ */
 public class PricingEngine {
 
-    // bad variable names
-    public double calc(List<Double> p, List<Integer> q, String ct, String code) {
-        double tot = 0;
-        for (int i = 0; i < p.size(); i++) {
-            tot = tot + p.get(i) * q.get(i);
-        }
+    private final DiscountCalculator discountCalculator;
+    private final TaxCalculator      taxCalculator;
 
-        double d = 0;
-        if (code != null) {
-            if (code.equals("SAVE10")) {
-                d = tot * 0.10;
-            } else if (code.equals("SAVE20")) {
-                d = tot * 0.20;
-            } else if (code.equals("SAVE5")) {
-                d = tot * 0.05;
-            }
-        }
-
-        // extra discount for VIP - magic number, no explanation
-        if (ct != null && ct.equals("VIP")) {
-            d = d + tot * 0.05;
-        }
-
-        double x = tot - d;
-
-        // tax - magic number
-        double tx = x * 0.15;
-
-        double f = x + tx;
-
-        // print everything (mixed responsibilities)
-        System.out.println("Subtotal: " + tot);
-        System.out.println("Discount: " + d);
-        System.out.println("Tax: " + tx);
-        System.out.println("Final: " + f);
-
-        return f;
+    public PricingEngine() {
+        this.discountCalculator = new DiscountCalculator();
+        this.taxCalculator      = new TaxCalculator();
     }
 
-    // duplicate logic, inconsistent
+    // ─── Public API (kept for backward compatibility with tests) ──
+
+    public double calc(List<Double> prices,
+                       List<Integer> quantities,
+                       String customerType,
+                       String discountCode) {
+
+        OrderSummary summary = calculateOrder(prices, quantities, customerType, discountCode);
+        System.out.println(summary);
+        return summary.getFinalPrice();
+    }
+
     public double getSubtotal(List<Double> prices, List<Integer> quantities) {
-        double total = 0;
+        double subtotal = 0.0;
         for (int i = 0; i < prices.size(); i++) {
-            total += prices.get(i) * quantities.get(i);
+            subtotal += prices.get(i) * quantities.get(i);
         }
-        return total;
+        return subtotal;
     }
 
-    public double getDiscount(double tot, String c) {
-        if (c == null) return 0;
-        if (c == "SAVE10") return tot * 0.10; // BUG: using == for String comparison
-        if (c == "SAVE20") return tot * 0.20;
-        return 0;
+    public double getDiscount(double subtotal, String discountCode) {
+        return discountCalculator.getCodeDiscount(subtotal, discountCode);
     }
 
-    public double getTax(double amount) {
-        return amount * 0.15; // magic number, no constant
+    public double getTax(double taxableAmount) {
+        return taxCalculator.calculate(taxableAmount);
+    }
+
+    // ─── New clean method returning full breakdown ─────────────────
+
+    public OrderSummary calculateOrder(List<Double> prices,
+                                       List<Integer> quantities,
+                                       String customerType,
+                                       String discountCode) {
+
+        double subtotal   = getSubtotal(prices, quantities);
+        double discount   = discountCalculator.getTotalDiscount(subtotal, customerType, discountCode);
+        double taxable    = subtotal - discount;
+        double tax        = taxCalculator.calculate(taxable);
+        double finalPrice = taxable + tax;
+
+        return new OrderSummary(subtotal, discount, tax, finalPrice);
     }
 }
